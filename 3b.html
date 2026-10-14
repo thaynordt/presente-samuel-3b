@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>3B.exe</title>
+
+<!--
+  =====================================================================
+  3B.exe — O ÚLTIMO DEPLOY
+  Tela final do caça ao tesouro do Dia dos Professores — Turma 3B
+  Arquivo único: HTML + CSS + JavaScript. Sem bibliotecas, sem fontes
+  externas, sem internet. É só abrir no navegador.
+
+  ONDE EDITAR (procure pelos comentários "EDITE AQUI"):
+   1. No <script>: bloco CONFIG  -> velocidade, rótulos dos botões e o
+      texto gigante da revelação ("VÁ ATÉ O FINAL DA SALA.").
+   2. No <script>: funções scene...() -> os textos de cada etapa.
+   3. No <style>: bloco :root -> cores do tema.
+
+  MARCAÇÕES DENTRO DOS TEXTOS:
+   [[palavra]]  -> destaque em BRANCO
+   {{palavra}}  -> destaque em VERDE NEON em negrito
+   ¦            -> pausa dramática na digitação
+  =====================================================================
+-->
+
+<style>
+/* ===================== TEMA / CORES (EDITE AQUI) ===================== */
+:root{
+  --bg:        #010603;               /* fundo quase preto esverdeado */
+  --panel:     rgba(2,13,7,.88);      /* fundo da janela do terminal */
+  --g:         #39ff88;               /* verde neon principal */
+  --g-dim:     #1f9f58;               /* verde apagado (textos secundários) */
+  --g-faint:   rgba(57,255,136,.18);  /* verde bem sutil (bordas, trilhos) */
+  --w:         #eafff2;               /* branco esverdeado (detalhes) */
+  --amber:     #ffd24a;               /* alertas e erros */
+  --mono: ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,"Liberation Mono","DejaVu Sans Mono","Courier New",monospace;
+}
+
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--g); font-family:var(--mono);
+  overflow:hidden; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--g);color:#001a0b}
+
+/* ===================== CAMADAS DE FUNDO / EFEITOS ===================== */
+#rain{position:fixed;inset:0;width:100%;height:100%;z-index:0;opacity:.16;transition:opacity 2.5s ease}
+
+/* scanlines (linhas de monitor antigo) */
+body::before{
+  content:"";position:fixed;inset:0;z-index:50;pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,.28) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply;
+}
+/* vinheta nas bordas */
+body::after{
+  content:"";position:fixed;inset:0;z-index:49;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.65) 100%);
+}
+/* faixa de varredura que desce devagar */
+.scanband{
+  position:fixed;left:0;right:0;height:18vh;z-index:48;pointer-events:none;top:-20vh;
+  background:linear-gradient(to bottom,transparent,rgba(57,255,136,.045),transparent);
+  animation:scanband 9s linear infinite;
+}
+@keyframes scanband{to{top:110vh}}
+
+/* clarão branco usado na revelação */
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60}
+#flash.go{animation:flash .8s ease-out}
+@keyframes flash{0%{opacity:.85}100%{opacity:0}}
+
+/* tremor de tela */
+.shake{animation:shake .55s cubic-bezier(.36,.07,.19,.97)}
+@keyframes shake{
+  10%,90%{transform:translate3d(-1px,0,0)} 20%,80%{transform:translate3d(3px,1px,0)}
+  30%,50%,70%{transform:translate3d(-6px,-1px,0)} 40%,60%{transform:translate3d(6px,1px,0)}
+}
+
+/* ===================== LAYOUT GERAL ===================== */
+.app{
+  position:relative;z-index:2;height:100dvh;max-width:980px;margin:0 auto;
+  display:flex;flex-direction:column;gap:10px;
+  padding:max(10px,env(safe-area-inset-top)) clamp(10px,2.4vw,22px) max(10px,env(safe-area-inset-bottom));
+}
+
+/* barra superior */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{font-weight:700;letter-spacing:.04em;font-size:clamp(.95rem,2.8vw,1.2rem);
+  text-shadow:0 0 10px rgba(57,255,136,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand small{color:var(--g-dim);font-weight:400;font-size:.8em;margin-left:.6em}
+.snd{font:inherit;font-size:.78rem;color:var(--g-dim);background:transparent;border:1px solid var(--g-faint);
+  padding:.45em .8em;border-radius:3px;cursor:pointer;min-height:34px}
+.snd:hover,.snd[aria-pressed="true"]{color:var(--g);border-color:var(--g)}
+
+/* indicador de etapas */
+.progress{display:flex;flex-direction:column;gap:6px}
+.segs{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.seg{height:6px;background:var(--g-faint);position:relative;overflow:hidden}
+.seg::after{content:"";position:absolute;inset:0;background:var(--g);box-shadow:0 0 10px var(--g);
+  transform:scaleX(0);transform-origin:left;transition:transform .9s ease}
+.seg.done::after{transform:scaleX(1)}
+.seg.cur::after{transform:scaleX(.55);animation:segpulse 1.4s ease-in-out infinite}
+@keyframes segpulse{50%{opacity:.45}}
+.plabel{display:flex;justify-content:space-between;font-size:.74rem;color:var(--g-dim);letter-spacing:.06em}
+
+/* janela do terminal */
+.term{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid rgba(57,255,136,.38);border-radius:6px;
+  box-shadow:0 0 0 1px rgba(57,255,136,.06),0 0 28px rgba(57,255,136,.16),inset 0 0 40px rgba(57,255,136,.04);
+  transition:background .8s ease;
+}
+.term.glass{background:rgba(2,13,7,.62)}
+.term.tense{animation:tense .16s steps(2) infinite}
+@keyframes tense{0%{filter:brightness(1)}50%{filter:brightness(.8)}100%{filter:brightness(1)}}
+
+.titlebar{display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--g-faint);
+  font-size:.74rem;color:var(--g-dim);flex:none}
+.titlebar i{width:9px;height:9px;border-radius:50%;background:var(--g-faint);border:1px solid var(--g-dim);display:block}
+.titlebar span{margin-left:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* área onde o texto aparece (rola sozinha) */
+#screen{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
+  padding:clamp(12px,2.6vw,24px);
+  scrollbar-width:thin;scrollbar-color:var(--g-dim) transparent;
+  transition:opacity .25s ease;
+}
+#screen.fadeout{opacity:0}
+
+/* linhas do terminal */
+.line{
+  margin:.18em 0;font-size:clamp(.88rem,2.3vw,1.04rem);line-height:1.6;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+  text-shadow:0 0 6px rgba(57,255,136,.45);
+}
+.prompt{color:var(--g-dim)}
+.dim{color:var(--g-dim)}
+.hl{color:#fff;text-shadow:0 0 9px rgba(255,255,255,.55)}
+.neon{color:var(--g);font-weight:700;text-shadow:0 0 10px rgba(57,255,136,.9)}
+.warn{color:var(--amber);text-shadow:0 0 8px rgba(255,210,74,.4)}
+.warn .neon{color:var(--amber);text-shadow:0 0 8px rgba(255,210,74,.6)}
+.bar{color:var(--g);letter-spacing:.02em}
+.bar.flicker{animation:flicker .25s steps(2) infinite}
+@keyframes flicker{50%{opacity:.35}}
+
+.line.head{font-size:clamp(1.05rem,3.6vw,1.6rem);letter-spacing:.06em;font-weight:700;margin:.28em 0}
+
+/* mensagens principais */
+.line.msg{font-size:clamp(1rem,2.9vw,1.24rem);line-height:1.7;margin:.55em 0}
+.line.msg.center{text-align:center}
+
+/* carta / homenagem */
+.line.letter{
+  font-size:clamp(1.02rem,3vw,1.34rem);line-height:1.75;margin:0 0 1.1em;color:#d4ffe4;
+  max-width:46ch;
+}
+.line.letter.sign{margin-top:1.4em;color:var(--g)}
+
+/* faixas de alerta (SURPRESA DETECTADA etc.) */
+.line.banner{
+  width:fit-content;max-width:100%;background:var(--g);color:#001a0b;font-weight:700;
+  padding:.3em .8em;letter-spacing:.08em;margin:.5em 0;text-shadow:none;
+  box-shadow:0 0 22px rgba(57,255,136,.55);animation:bannerIn .35s steps(3);
+}
+.line.banner .cur{background:#001a0b;box-shadow:none}
+@keyframes bannerIn{0%{opacity:0;transform:translateX(-14px)}100%{opacity:1;transform:none}}
+
+/* cursor piscando */
+.cur{display:inline-block;width:.6em;height:1.05em;background:var(--g);margin-left:2px;vertical-align:-.17em;
+  box-shadow:0 0 9px var(--g);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ===================== A GRANDE REVELAÇÃO ===================== */
+.reveal{display:flex;flex-direction:column;align-items:center;text-align:center}
+.reveal .tag{color:var(--g-dim);font-size:.8rem;letter-spacing:.18em;margin:.2em 0 .6em}
+.hud{
+  position:sticky;top:0;z-index:3;margin:0;width:100%;
+  padding:.7em .5em;background:rgba(2,13,7,.96);
+  font-weight:800;line-height:1.06;text-transform:uppercase;
+  display:flex;flex-direction:column;align-items:center;gap:.14em;
+}
+/* cantos de "mira" ao redor do texto */
+.hud::before,.hud::after{content:"";position:absolute;width:1.3rem;height:1.3rem;border:2px solid var(--g);opacity:.9}
+.hud::before{top:0;left:0;border-right:0;border-bottom:0}
+.hud::after{bottom:0;right:0;border-left:0;border-top:0}
+.rl{display:flex;flex-wrap:wrap;justify-content:center;gap:.28em}
+.l1{font-size:clamp(1.2rem,5vw,2.4rem);color:var(--g);text-shadow:0 0 14px rgba(57,255,136,.8)}
+.l2{font-size:clamp(1.9rem,8.2vw,4.3rem);color:#fff;text-shadow:0 0 12px rgba(57,255,136,.8)}
+.l3{font-size:clamp(2rem,9.4vw,5.6rem);color:#fff;
+  text-shadow:0 0 10px var(--g),0 0 30px var(--g),0 0 70px rgba(57,255,136,.65)}
+/* cada palavra "cai" na tela */
+.w{display:inline-block;opacity:0;transform:scale(2.8);filter:blur(12px);
+  transition:opacity .4s ease,transform .5s cubic-bezier(.2,1.5,.4,1),filter .4s ease}
+.w.in{opacity:1;transform:none;filter:none}
+.hud.done .l3{animation:glow 2.2s ease-in-out infinite}
+@keyframes glow{50%{text-shadow:0 0 14px var(--g),0 0 44px var(--g),0 0 100px rgba(57,255,136,.9)}}
+.reveal .after{width:100%;padding-top:.6em}
+.line.status{text-align:center;color:var(--w)}
+
+/* tela final */
+.line.finale{
+  font-size:clamp(1.7rem,7.4vw,3.6rem);font-weight:800;line-height:1.15;color:#fff;margin:.6em 0 .3em;
+  text-shadow:0 0 12px var(--g),0 0 36px var(--g),0 0 80px rgba(57,255,136,.6);text-align:center;
+}
+.line.center{text-align:center}
+
+/* ===================== BOTÕES ===================== */
+.actions{flex:none;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;min-height:56px}
+.btn{
+  font:inherit;font-weight:700;letter-spacing:.08em;font-size:clamp(.9rem,2.8vw,1.05rem);
+  color:var(--g);background:rgba(57,255,136,.07);border:1px solid var(--g);border-radius:3px;
+  padding:.95em 1.6em;min-height:50px;cursor:pointer;text-shadow:0 0 8px rgba(57,255,136,.7);
+  box-shadow:0 0 16px rgba(57,255,136,.28),inset 0 0 14px rgba(57,255,136,.1);
+  transition:background .2s,color .2s,box-shadow .2s;animation:btnpulse 2s ease-in-out infinite;
+}
+.btn:hover{background:var(--g);color:#001a0b;text-shadow:none;box-shadow:0 0 30px rgba(57,255,136,.8)}
+.btn:disabled{opacity:.4;cursor:not-allowed;animation:none}
+@keyframes btnpulse{50%{box-shadow:0 0 28px rgba(57,255,136,.55),inset 0 0 18px rgba(57,255,136,.16)}}
+.btn.ghost{font-weight:400;font-size:.8rem;letter-spacing:.04em;padding:.6em 1.1em;min-height:40px;
+  color:var(--g-dim);border-color:var(--g-faint);background:transparent;box-shadow:none;animation:none;text-shadow:none}
+.btn.ghost:hover{color:var(--g);border-color:var(--g);background:rgba(57,255,136,.08);box-shadow:none}
+.btn:focus-visible,.snd:focus-visible{outline:2px solid #fff;outline-offset:3px}
+
+@media (max-width:560px){
+  #next{width:100%}
+  .actions{gap:8px}
+  .brand small{display:none}
+}
+@media (max-height:520px){
+  .app{gap:6px}
+  .titlebar{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+
+<body>
+<canvas id="rain" aria-hidden="true"></canvas>
+<div class="scanband" aria-hidden="true"></div>
+<div id="flash" aria-hidden="true"></div>
+
+<div class="app" id="app">
+
+  <header class="topbar">
+    <div class="brand">● 3B.exe<small>// O Último Deploy</small></div>
+    <button class="snd" id="snd" type="button" aria-pressed="false">SOM: OFF</button>
+  </header>
+
+  <!-- Indicador de etapas -->
+  <div class="progress" aria-label="Progresso da missão">
+    <div class="segs" id="segs"></div>
+    <div class="plabel"><span id="stepLabel">ETAPA 1/6</span><span id="pct">0%</span></div>
+  </div>
+
+  <!-- Janela do terminal -->
+  <main class="term" id="term">
+    <div class="titlebar"><i></i><i></i><i></i><span>root@3B:~/ultimo-deploy</span></div>
+    <div id="screen"></div>
+  </main>
+
+  <!-- Botões: o "pular" aparece só enquanto o texto está sendo digitado -->
+  <div class="actions">
+    <button class="btn ghost" id="skip" type="button" hidden>» pular animação</button>
+    <button class="btn" id="next" type="button" hidden></button>
+  </div>
+</div>
+
+<noscript><p style="position:fixed;inset:0;z-index:99;background:#000;color:#39ff88;padding:2rem;font-family:monospace">
+  Ative o JavaScript do navegador para executar 3B.exe.</p></noscript>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONFIG (EDITE AQUI) — velocidades, rótulos e texto da revelação
+   ===================================================================== */
+const CONFIG = {
+  typeSpeed:   20,    // ms por letra (menor = mais rápido)
+  letterSpeed: 32,    // ms por letra na homenagem (mais lento, mais emocional)
+  pause:       480,   // duração da pausa "¦" dentro dos textos (ms)
+
+  btnStart:    '[ INICIAR SEQUÊNCIA FINAL ]',
+  btnContinue: '[ CONTINUAR ]',
+  btnFinal:    '[ EXECUTAR ÚLTIMO COMANDO ]',
+  btnRestart:  '[ REINICIAR MISSÃO ]',
+
+  // O GRANDE MOMENTO: cada palavra entra na tela com um "impacto".
+  destino: {
+    linha1: ['PROFESSOR,'],
+    linha2: ['VÁ', 'ATÉ', 'O'],
+    linha3: ['FINAL', 'DA', 'SALA.']
+  }
+};
+
+const STEPS = ['INÍCIO','VERIFICAÇÃO','SUSPENSE','HOMENAGEM','REVELAÇÃO','CONCLUSÃO'];
+
+/* ===================== Referências da página ===================== */
+const $ = s => document.querySelector(s);
+const screenEl = $('#screen'), term = $('#term'), app = $('#app');
+const nextBtn = $('#next'), skipBtn = $('#skip'), sndBtn = $('#snd');
+const segsEl = $('#segs'), stepLabel = $('#stepLabel'), pctEl = $('#pct');
+const flashEl = $('#flash');
+
+/* ===================== Estado ===================== */
+let busy = false;        // true enquanto uma etapa está sendo "executada" (bloqueia cliques)
+let skip = false;        // true quando o usuário pediu para pular a animação da etapa
+let skippable = true;    // false em momentos que não devem ser pulados (a revelação)
+let soundOn = false, audio = null, tickCount = 0;
+const waiters = new Set();
+
+/* cursor único, que "anda" pelo terminal */
+const cur = document.createElement('span');
+cur.className = 'cur';
+
+/* ===================== Pausas que podem ser puladas ===================== */
+function sleep(ms){
+  return new Promise(res => {
+    if (skip) { res(); return; }
+    const w = { res };
+    w.t = setTimeout(() => { waiters.delete(w); res(); }, ms);
+    waiters.add(w);
+  });
+}
+function doSkip(){
+  if (!busy || !skippable) return;
+  skip = true;
+  waiters.forEach(w => { clearTimeout(w.t); w.res(); });
+  waiters.clear();
+}
+
+/* ===================== Som (opcional, gerado no navegador) ===================== */
+function ensureAudio(){
+  if (!audio){ const AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); }
+  if (audio && audio.state === 'suspended') audio.resume();
+}
+function tone(freq, dur, type='square', vol=.02, slideTo){
+  if (!soundOn || !audio) return;
+  try{
+    const t0 = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+    o.connect(g); g.connect(audio.destination); o.start(t0); o.stop(t0 + dur);
+  }catch(e){}
+}
+const tick = () => { if ((tickCount++ % 2) === 0) tone(1300 + Math.random()*500, .02, 'square', .010); };
+const beep = () => tone(880, .09, 'square', .03);
+const boom = () => tone(130, .9, 'sine', .28, 35);
+
+sndBtn.addEventListener('click', () => {
+  soundOn = !soundOn;
+  if (soundOn) ensureAudio();
+  sndBtn.textContent = soundOn ? 'SOM: ON' : 'SOM: OFF';
+  sndBtn.setAttribute('aria-pressed', String(soundOn));
+  beep();
+});
+
+/* ===================== Efeitos de tela ===================== */
+function flash(){ flashEl.classList.remove('go'); void flashEl.offsetWidth; flashEl.classList.add('go'); }
+function shake(){ app.classList.remove('shake'); void app.offsetWidth; app.classList.add('shake'); }
+function scrollDown(){ screenEl.scrollTop = screenEl.scrollHeight; }
+
+/* ===================== Indicador de etapas ===================== */
+STEPS.forEach(() => { const s = document.createElement('div'); s.className = 'seg'; segsEl.appendChild(s); });
+function setStep(i, complete = false){
+  [...segsEl.children].forEach((seg, idx) => {
+    seg.className = 'seg' + (complete || idx < i ? ' done' : idx === i ? ' cur' : '');
+  });
+  stepLabel.textContent = complete ? 'MISSÃO CONCLUÍDA' : `ETAPA ${i+1}/6 · ${STEPS[i]}`;
+  pctEl.textContent = (complete ? 100 : Math.round(i / 5 * 100)) + '%';
+}
+
+/* ===================== Motor de digitação ===================== */
+/* Converte [[x]] e {{x}} em pedaços com estilo */
+function parse(text){
+  return text.split(/(\[\[.*?\]\]|\{\{.*?\}\})/).filter(Boolean).map(p => {
+    if (p.startsWith('[[')) return { t: p.slice(2,-2), c: 'hl' };
+    if (p.startsWith('{{')) return { t: p.slice(2,-2), c: 'neon' };
+    return { t: p, c: '' };
+  });
+}
+
+/* Digita uma linha, letra por letra. Retorna o elemento da linha. */
+async function type(text, opts = {}){
+  const { cls = '', prefix = '', speed = CONFIG.typeSpeed, after = 250, parent = screenEl } = opts;
+  const line = document.createElement('div');
+  line.className = 'line ' + cls;
+  if (prefix){
+    const p = document.createElement('span');
+    p.className = 'prompt'; p.textContent = prefix + ' ';
+    line.appendChild(p);
+  }
+  parent.appendChild(line);
+  line.appendChild(cur);
+
+  for (const seg of parse(text)){
+    let node;
+    if (seg.c){ node = document.createElement('span'); node.className = seg.c; }
+    else { node = document.createTextNode(''); }
+    line.insertBefore(node, cur);
+    for (const ch of seg.t){
+      if (ch === '¦'){ if (!skip) await sleep(CONFIG.pause); continue; }
+      node.textContent += ch;
+      if (!skip){ tick(); await sleep(speed); }
+    }
+    scrollDown();
+  }
+  scrollDown();
+  await sleep(after);
+  return line;
+}
+
+/* Barra de carregamento animada. "max" permite parar em 99%. */
+async function bar(label, dur = 1400, max = 100){
+  if (label) await type(label, { cls: 'dim', prefix: '>', speed: 14, after: 120 });
+  cur.remove();
+  const line = document.createElement('div');
+  line.className = 'line bar';
+  screenEl.appendChild(line);
+  const N = 18, steps = 24;
+  for (let i = 0; i <= steps; i++){
+    const pct = Math.round(max * i / steps), f = Math.round(N * pct / 100);
+    line.textContent = `[${'█'.repeat(f)}${'░'.repeat(N - f)}] ${String(pct).padStart(3,' ')}%`;
+    scrollDown();
+    if (i < steps){ if (!skip) tick(); await sleep(dur / steps); }
+  }
+  await sleep(200);
+  return line;
+}
+
+/* Linha de "prompt" esperando um comando (cursor piscando) */
+function idle(parent = screenEl){
+  const l = document.createElement('div');
+  l.className = 'line';
+  l.innerHTML = '<span class="prompt">&gt; </span>';
+  parent.appendChild(l); l.appendChild(cur);
+  scrollDown();
+}
+
+/* Limpa a tela com um pequeno fade */
+async function clearScreen(){
+  cur.remove();
+  screenEl.classList.add('fadeout');
+  await sleep(260);
+  screenEl.innerHTML = '';
+  screenEl.scrollTop = 0;
+  screenEl.classList.remove('fadeout');
+}
+
+/* ===================== Controle de botões / etapas ===================== */
+/* Mostra o botão principal. Só avança quando o usuário clica. */
+function showAction(label, handler, parent = screenEl){
+  idle(parent);
+  nextBtn.textContent = label;
+  nextBtn.disabled = false;
+  nextBtn.hidden = false;
+  nextBtn.onclick = () => run(handler);
+  nextBtn.focus({ preventScroll: true });
+}
+
+/* Executa uma etapa. "busy" impede cliques duplos que pulariam etapas. */
+async function run(handler){
+  if (busy) return;
+  busy = true; skip = false; skippable = true;
+  nextBtn.hidden = true; nextBtn.disabled = true; nextBtn.onclick = null;
+  skipBtn.hidden = false;
+  try { await handler(); }
+  catch (e){ console.error(e); }
+  finally {
+    busy = false; skip = false; skippable = true;
+    skipBtn.hidden = true;
+  }
+}
+skipBtn.addEventListener('click', doSkip);
+document.addEventListener('keydown', e => {
+  if (!e.repeat && (e.key === 'Escape' || e.key === 'Enter')) doSkip();
+});
+
+/* =====================================================================
+   ETAPAS DA MISSÃO  (EDITE AQUI os textos)
+   ===================================================================== */
+
+/* ---------- ETAPA 0: INICIALIZAÇÃO ---------- */
+async function sceneBoot(){
+  setStep(0);
+  await type('3B-BIOS v3.0 · iniciando…', { cls: 'dim', speed: 10, after: 150 });
+  await type('montando /turma/3B ............ {{[ OK ]}}', { speed: 10, after: 120 });
+  await type('carregando missao.dat ......... {{[ OK ]}}', { speed: 10, after: 120 });
+  await type('abrindo canal seguro .......... {{[ OK ]}}', { speed: 10, after: 400 });
+
+  await type('PROJETO [[3B.exe]]', { cls: 'head', speed: 28, after: 200 });
+  await type('ACESSO {{RESTRITO}}', { cls: 'head', speed: 28, after: 200 });
+  await type('USUÁRIO IDENTIFICADO: [[PROFESSOR SAMUEL]]', { cls: 'head', speed: 24, after: 500 });
+
+  await bar('verificando os arquivos da missão…', 1500);
+
+  await type('Todas as fases foram concluídas.', { cls: 'msg', speed: 26, after: 350 });
+  await type('Todos os arquivos foram recuperados.', { cls: 'msg', speed: 26, after: 600 });
+  await type('Mas ainda existe uma {{última etapa}}.', { cls: 'msg', speed: 30, after: 900 });
+  await type('Professor, você está preparado para executar o [[último comando]]?', { cls: 'msg', speed: 32, after: 400 });
+
+  showAction(CONFIG.btnStart, sceneVerify);
+}
+
+/* ---------- ETAPA 1: VERIFICAÇÃO (mensagens técnicas) ---------- */
+async function sceneVerify(){
+  setStep(1);
+  await clearScreen();
+  await type('Verificando integridade dos arquivos…', { prefix: '>', cls: 'dim', after: 200 });
+  await bar('', 1600);
+  await type('{{[ OK ]}} Fase 1: validada.', { speed: 16, after: 350 });
+  await type('{{[ OK ]}} Fase 2: validada.', { speed: 16, after: 350 });
+  await type('{{[ OK ]}} Fase 3: validada.', { speed: 16, after: 600 });
+  await type('Todas as pistas foram processadas.', { speed: 22, after: 700 });
+  await type('Inicializando protocolo final…', { prefix: '>', cls: 'dim', after: 200 });
+  await bar('', 1700);
+  await type('{{[ OK ]}} protocolo final carregado.', { speed: 16, after: 500 });
+
+  showAction(CONFIG.btnContinue, sceneSuspense);
+}
+
+/* ---------- ETAPA 2: SUSPENSE ---------- */
+async function sceneSuspense(){
+  setStep(2);
+  await clearScreen();
+  await type('Professor, durante todo esse tempo, você nos ensinou a encontrar [[erros]], resolver [[problemas]] e [[tentar novamente]] quando algo não funciona.', { cls: 'msg', speed: 24, after: 1000 });
+  await type('Mas existe algo que nenhum código consegue calcular:¦ o {{impacto de alguém que ensina}}.', { cls: 'msg', speed: 28, after: 1400 });
+
+  // pequeno momento de suspense: a tela "treme" de leve e o cálculo trava
+  term.classList.add('tense');
+  await type('calculando impacto…', { prefix: '>', cls: 'dim', speed: 36, after: 500 });
+  const b = await bar('', 2200, 99);          // trava em 99%
+  b.classList.add('flicker');
+  await sleep(1700);
+  b.classList.remove('flicker');
+  term.classList.remove('tense');
+
+  // humor leve: o "código" não dá conta
+  await type('{{[ ERRO ]}} ImpactoOverflowError: valor maior que qualquer tipo de dado.', { cls: 'warn', speed: 18, after: 900 });
+  await type('tentando novamente… (a gente aprendeu isso com você)', { prefix: '>', cls: 'dim', speed: 24, after: 1000 });
+  await type('{{[ ERRO ]}} mesmo resultado.', { cls: 'warn', speed: 18, after: 900 });
+  await type('[[Conclusão:]] alguns valores não cabem em variável nenhuma.', { speed: 24, after: 500 });
+
+  showAction(CONFIG.btnContinue, sceneTribute);
+}
+
+/* ---------- ETAPA 3: HOMENAGEM ---------- */
+async function sceneTribute(){
+  setStep(3);
+  await clearScreen();
+  const L = { cls: 'letter', speed: CONFIG.letterSpeed };
+
+  await type('Por trás de cada [[exercício]], cada [[dúvida]] e cada [[aula]],¦ você deixou um pouco do seu conhecimento na nossa {{história}}.', { ...L, after: 1100 });
+  await type('Talvez nossa turma tenha alguns [[bugs]],¦ algumas linhas fora do lugar¦ e alguns erros de compilação,¦ mas cada um de nós está construindo a sua própria {{história}}.', { ...L, after: 1100 });
+  await type('E uma parte do que levaremos conosco¦ também tem a sua {{assinatura}}.', { ...L, after: 1300 });
+  await type('Obrigado por fazer parte do nosso [[terceirão]].', { ...L, after: 1200 });
+  await type('Com carinho,¦ turma {{3B}}.', { ...L, cls: 'letter sign', after: 700 });
+
+  showAction(CONFIG.btnContinue, sceneReveal);
+}
+
+/* ---------- ETAPA 4: A GRANDE REVELAÇÃO ---------- */
+async function sceneReveal(){
+  setStep(4);
+  await clearScreen();
+
+  // 1) sequência de comandos
+  await type('./localizar_presente.sh --silencioso', { prefix: '$', cls: 'dim', after: 300 });
+  await bar('triangulando coordenadas…', 1700);
+  await sleep(500);
+
+  // 2) alertas em faixas
+  for (const t of ['SURPRESA DETECTADA', 'LOCALIZAÇÃO CONFIRMADA', 'ÚLTIMO DESTINO DESBLOQUEADO']){
+    beep();
+    await type(t, { cls: 'banner', speed: 30, after: 750 });
+  }
+  await sleep(900);
+
+  // 3) a partir daqui NÃO dá para pular: o impacto precisa acontecer
+  skip = false; skippable = false; skipBtn.hidden = true;
+  cur.remove();
+  flash(); shake(); boom();
+  screenEl.innerHTML = '';
+  screenEl.scrollTop = 0;
+
+  const D = CONFIG.destino;
+  const mk = arr => arr.map(w => `<span class="w">${w}</span>`).join('');
+  const wrap = document.createElement('div');
+  wrap.className = 'reveal';
+  wrap.innerHTML =
+    '<div class="tag">// ÚLTIMO DESTINO</div>' +
+    '<h1 class="hud" aria-label="Professor, vá até o final da sala.">' +
+      `<span class="rl l1">${mk(D.linha1)}</span>` +
+      `<span class="rl l2">${mk(D.linha2)}</span>` +
+      `<span class="rl l3">${mk(D.linha3)}</span>` +
+    '</h1><div class="after"></div>';
+  screenEl.appendChild(wrap);
+  const hud = wrap.querySelector('.hud'), after = wrap.querySelector('.after');
+
+  // cada palavra "cai" na tela, uma por vez (tempo antes de cada palavra, em ms)
+  const words = [...wrap.querySelectorAll('.w')];
+  const gaps = [900, 600, 420, 420, 1200, 500, 650];
+  for (let i = 0; i < words.length; i++){
+    await sleep(gaps[i] !== undefined ? gaps[i] : 500);
+    words[i].classList.add('in');
+    if (i >= 4){ boom(); shake(); } else { beep(); }
+  }
+  flash();
+  hud.classList.add('done');
+  await sleep(1400);
+
+  // 4) texto de apoio (agora pode pular de novo)
+  skippable = true; skipBtn.hidden = false;
+  await type('Seu último desafio não está mais nesta tela.', { cls: 'msg center', parent: after, speed: 30, after: 600 });
+  await type('Levante-se, [[Samuel]]. A sua recompensa está esperando por você.', { cls: 'msg center', parent: after, speed: 30, after: 900 });
+  await type('Missão: {{encontrar o presente}}', { cls: 'status', parent: after, speed: 20, after: 350 });
+  await type('Localização: {{fundo da sala}}', { cls: 'status', parent: after, speed: 20, after: 350 });
+  await type('Status: quase concluído  [█████████░]', { cls: 'status', parent: after, speed: 20, after: 500 });
+
+  showAction(CONFIG.btnFinal, sceneFinale, after);
+}
+
+/* ---------- ETAPA 5: ENCERRAMENTO ---------- */
+async function sceneFinale(){
+  setStep(5, true);
+  setRain(.5);                       // chuva de caracteres mais visível
+  term.classList.add('glass');
+  await clearScreen();
+
+  await type('{{[ OK ]}} 3B.exe executado com sucesso.', { speed: 18, after: 450 });
+  await type('{{[ OK ]}} Professor encontrado.', { speed: 18, after: 450 });
+  await type('{{[ OK ]}} Presente desbloqueado.', { speed: 18, after: 450 });
+  await type('{{[ OK ]}} Memórias salvas permanentemente.', { speed: 18, after: 900 });
+
+  boom(); flash();
+  await type('Feliz Dia dos Professores!', { cls: 'finale', speed: 55, after: 600 });
+  await type('— com carinho, turma {{3B}}', { cls: 'center', speed: 30, after: 500 });
+
+  showAction(CONFIG.btnRestart, () => { location.reload(); });
+}
+
+/* =====================================================================
+   CHUVA DE CARACTERES (canvas) — leve e discreta
+   ===================================================================== */
+const cv = $('#rain'), cx = cv.getContext('2d');
+const GLYPHS = '01{}[]<>/\\;=+*#$%&'.split('');
+const FS = 16;
+let drops = [], lastT = 0;
+const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function sizeRain(){
+  cv.width = innerWidth; cv.height = innerHeight;
+  drops = Array.from({ length: Math.ceil(cv.width / FS) }, () => -Math.floor(Math.random() * 40));
+  cx.fillStyle = '#010603'; cx.fillRect(0, 0, cv.width, cv.height);
+}
+function rainFrame(t){
+  requestAnimationFrame(rainFrame);
+  if (t - lastT < 70) return;
+  lastT = t;
+  cx.fillStyle = 'rgba(1,6,3,.14)';
+  cx.fillRect(0, 0, cv.width, cv.height);
+  cx.font = FS + 'px monospace';
+  for (let i = 0; i < drops.length; i++){
+    const y = drops[i] * FS;
+    cx.fillStyle = Math.random() > .975 ? '#eafff2' : '#39ff88';
+    cx.fillText(GLYPHS[(Math.random() * GLYPHS.length) | 0], i * FS, y);
+    if (y > cv.height && Math.random() > .975) drops[i] = 0;
+    drops[i]++;
+  }
+}
+function setRain(o){ cv.style.opacity = o; }
+sizeRain();
+addEventListener('resize', sizeRain);
+if (!reduceMotion) requestAnimationFrame(rainFrame);
+
+/* ===================== INÍCIO ===================== */
+run(sceneBoot);
+
+})();
+</script>
+</body>
+</html>
